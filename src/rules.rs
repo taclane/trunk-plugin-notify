@@ -8,7 +8,7 @@ use serde_json::Value;
 use trunk_recorder_plugin::filter::glob;
 
 use crate::payload::Notification;
-use crate::settings::{Encryption, Event, Rule};
+use crate::settings::{tolerance, Encryption, Event, Pattern, Rule, ToneSpec};
 
 /// Something heard, as rules see it.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -22,8 +22,13 @@ pub struct Notice {
     pub unit_tag: String,
     /// Signals: their ids (without the system).
     pub signals: Vec<String>,
-    /// Tones and signals: the pattern (`two_tone`, …).
+    /// Tones and signals: the pattern (`two_tone`, …), its tones (Hz), its
+    /// digits (`KNOX ` first for KNOX) or Morse text, and whether a tone
+    /// frame named it (else it was measured in the audio).
     pub pattern: String,
+    pub tones: Vec<f64>,
+    pub digits: String,
+    pub frame: bool,
     pub text: String,
     pub call_num: Option<u64>,
     /// Calls: whether it's encrypted (as far as is known when it begins).
@@ -50,6 +55,21 @@ fn signal_is(want: &str, system: &str, heard: &str) -> bool {
     }
 }
 
+/// What was heard is tone `t`: its pattern, and its tones each within tolerance (digits and Morse: the same).
+pub fn tone_is(t: &ToneSpec, n: &Notice) -> bool {
+    if t.pattern.name() != n.pattern {
+        return false;
+    }
+    match t.pattern {
+        Pattern::Digits => t.digits == n.digits,
+        Pattern::Morse => t.digits.eq_ignore_ascii_case(&n.digits),
+        _ => {
+            let tol = |f: f64| if t.tolerance_hz > 0.0 { t.tolerance_hz } else { tolerance(f, n.frame) };
+            t.tones_hz.len() == n.tones.len() && t.tones_hz.iter().zip(&n.tones).all(|(&want, &got)| (want - got).abs() <= tol(want))
+        }
+    }
+}
+
 impl Notice {
     /// `system:ID` for each of its signals.
     pub fn signal_names(&self) -> Vec<String> {
@@ -66,6 +86,7 @@ pub fn matches(r: &Rule, n: &Notice) -> bool {
         && listed(&r.units, n.unit)
         && (r.signals.is_empty() || n.signals.iter().any(|h| r.signals.iter().any(|w| signal_is(w, &n.system, h))))
         && (r.patterns.is_empty() || r.patterns.iter().any(|p| p.name() == n.pattern))
+        && (r.tones.is_empty() || n.event != Some(Event::Tone) || r.tones.iter().any(|t| tone_is(t, n)))
         && match r.encrypted {
             Encryption::Either => true,
             Encryption::Encrypted => n.encrypted == Some(true),
@@ -190,6 +211,24 @@ mod tests {
         let pages = rule(json!({ "name": "p", "event": "tone", "patterns": ["two_tone", "hi_low"] }));
         let tone = Notice { event: Some(Event::Tone), pattern: "hi_low".into(), ..Default::default() };
         assert!(matches(&pages, &tone) && !matches(&pages, &Notice { pattern: "morse".into(), ..tone.clone() }));
+    }
+
+    #[test]
+    fn tones_typed_in() {
+        // QC2 313.0 / 1642.0, never heard: the audio measures it near, a Phase 2 tone frame on its grid.
+        let r = rule(json!({ "name": "rare", "event": "tone", "tones": [{ "pattern": "two_tone", "tonesHz": [313.0, 1642.0] }] }));
+        let page =
+            |tones: [f64; 2], frame: bool| Notice { event: Some(Event::Tone), pattern: "two_tone".into(), tones: tones.to_vec(), frame, ..Default::default() };
+        assert!(matches(&r, &page([314.5, 1650.0], false)));
+        assert!(!matches(&r, &page([330.0, 1642.0], false)), "A 5 % off");
+        assert!(matches(&r, &page([312.5, 1656.25], true)), "a tone frame's 31.25 Hz steps");
+        assert!(!matches(&r, &page([1642.0, 313.0], false)), "B then A");
+        // Digits, exactly; KNOX only when it says.
+        let keys = rule(json!({ "name": "siren", "event": "tone", "tones": [{ "pattern": "digits", "digits": "072864" }] }));
+        let digits = |d: &str| Notice { event: Some(Event::Tone), pattern: "digits".into(), digits: d.into(), ..Default::default() };
+        assert!(matches(&keys, &digits("072864")) && !matches(&keys, &digits("KNOX 072864")));
+        // None typed in: any tone.
+        assert!(matches(&rule(json!({ "name": "any", "event": "tone" })), &page([1.0, 2.0], false)));
     }
 
     #[test]

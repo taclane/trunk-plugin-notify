@@ -33,7 +33,7 @@ pub struct Settings {
 #[serde(rename_all = "camelCase", default)]
 #[schemars(extend(
     "x-title" = "name",
-    "x-summary" = ["{event}", "{signals|any signal}", "{patterns|any tone}", "{systems|any system}", "TG {talkgroups}", "radio {units}", "{followUp}", "→ {to|nowhere yet}"]
+    "x-summary" = ["{event}", "{signals|any signal}", "{tones}", "{patterns}", "{systems|any system}", "TG {talkgroups}", "radio {units}", "{followUp}", "→ {to|nowhere yet}"]
 ))]
 pub struct Rule {
     /// Name
@@ -54,11 +54,17 @@ pub struct Rule {
     #[schemars(extend("x-signals" = true))]
     #[schemars(extend("x-when" = { "event": "signal" }))]
     pub signals: Vec<String>,
-    /// Tone patterns
+    /// Kinds of tone
     ///
-    /// Which kinds (empty: any).
+    /// Empty: any.
     #[schemars(extend("x-when" = { "event": "tone" }))]
     pub patterns: Vec<Pattern>,
+    /// Tones
+    ///
+    /// Particular tones, typed in: a page from a paging list that hasn't been heard yet, say. Empty:
+    /// any tone of the kinds above. (Tones heard and named are signals: "A signal is heard".)
+    #[schemars(extend("x-tones" = true, "x-when" = { "event": "tone" }))]
+    pub tones: Vec<ToneSpec>,
     /// Talkgroups
     ///
     /// Numbers, ranges (1000-1099) and patterns (507*). Empty: any.
@@ -105,6 +111,7 @@ impl Default for Rule {
             systems: Vec::new(),
             signals: Vec::new(),
             patterns: Vec::new(),
+            tones: Vec::new(),
             talkgroups: Vec::new(),
             units: Vec::new(),
             encrypted: Encryption::Either,
@@ -123,7 +130,7 @@ pub enum Event {
     /// A signal is heard
     #[default]
     Signal,
-    /// A tone pattern is heard
+    /// A tone is heard
     Tone,
     /// An emergency (a call, or a radio's alarm)
     Emergency,
@@ -145,6 +152,38 @@ impl Event {
             Event::NewTalkgroup => "new_talkgroup",
             Event::NewRadio => "new_radio",
         }
+    }
+}
+
+/// A tone typed in, as a system's signal has it (its pattern, tones or digits; its lengths are for
+/// playing it, not matched).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ToneSpec {
+    pub pattern: Pattern,
+    /// Hz, in order (two-tone: A then B).
+    pub tones_hz: Vec<f64>,
+    /// Digits (`KNOX ` first for KNOX tones); Morse: the text.
+    pub digits: String,
+    pub lengths_s: Vec<f64>,
+    /// How far a heard tone may be, Hz; 0: as the recorder matches signals.
+    pub tolerance_hz: f64,
+}
+
+impl Default for ToneSpec {
+    fn default() -> Self {
+        ToneSpec { pattern: Pattern::TwoTone, tones_hz: Vec::new(), digits: String::new(), lengths_s: Vec::new(), tolerance_hz: 0.0 }
+    }
+}
+
+/// How far a heard tone may be from `hz` and still be it, Hz: as the recorder matches signals.
+/// Measured in audio, 2.5 %; from Phase 2's tone frames, which name a tone on a 31.25 Hz grid,
+/// 15.7 Hz and 0.5 %.
+pub fn tolerance(hz: f64, from_frame: bool) -> f64 {
+    if from_frame {
+        15.7 + 0.005 * hz
+    } else {
+        0.025 * hz
     }
 }
 
