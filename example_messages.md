@@ -57,9 +57,13 @@ Its recording, when the rule has **Then the recording**:
   "call_num": 18233,
   "url": "http://100.64.0.5:8091/calls/wood/2026/10/22/1-1792687369_452562500.m4a",
   "time": 1792687369.42,
-  "detail": { "path": "wood/2026/10/22/1-1792687369_452562500", "length": 21.4 }
+  "detail": { "path": "wood/2026/10/22/1-1792687369_452562500", "length": 21.4 },
+  "audio": { "name": "1-1792687369_452562500.m4a", "type": "audio/mp4", "base64": "AAAAHGZ0eXBNNEEg…" }
 }
 ```
+
+`url` is there when **Link recordings from** is set; `audio` in what JSON webhooks are sent (a
+command gets the file as `TRP_AUDIO` instead).
 
 ## Discord
 
@@ -102,9 +106,10 @@ A recording's audio is attached as a file (multipart, the JSON as `payload_json`
 
 ## ntfy
 
-The words as the body, with headers: `Title` (the title), `Tags` (`bell`, `rotating_light`,
-`speaker`, `new` or `radio`), `Priority: high` for signals and emergencies, and `Click` (the
-recording's link).
+The words as the body, with the title and the rest in the URL's query: `title`, `tags` (`bell`,
+`rotating_light`, `speaker`, `new` or `radio`), `priority=high` for signals and emergencies, and
+`click` (the recording's link). A recording's audio is sent as the attachment, the words then as
+`message` and the file's name as `filename`.
 
 ## Commands
 
@@ -121,3 +126,4 @@ The notification's JSON on stdin, and:
 | `TRP_UNIT` | `1675303` |
 | `TRP_SIGNALS` | `wood:FD_PAGE` |
 | `TRP_URL` | a recording's link |
+| `TRP_AUDIO` | a recording's audio file (removed when the command ends) |

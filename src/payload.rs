@@ -106,40 +106,70 @@ pub fn command_env(n: &Notification) -> Vec<(&'static str, String)> {
     ]
 }
 
+/// A recording's audio, and its file name.
+pub type Audio = (Vec<u8>, String);
+
 /// What a webhook sends.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Payload {
     pub content_type: String,
     pub body: Vec<u8>,
-    /// Besides the destination's own.
-    pub headers: Vec<(String, String)>,
-    /// Discord: send it with the audio file attached (multipart), the body as `payload_json`.
-    pub attach: bool,
+    /// Added to the URL's query (ntfy takes its title and the rest there,
+    /// where they can be any text).
+    pub query: Vec<(String, String)>,
+    /// Discord: the recording's file goes with it (multipart), the body as `payload_json`.
+    pub multipart: bool,
 }
 
-/// What `d` sends for `n`: its own body if it has one, else its format's
-/// (with a recording's file attached for Discord, when there is one).
-pub fn payload(d: &Destination, n: &Notification, has_audio: bool) -> Payload {
+/// The audio's type, by its name.
+pub fn audio_type(name: &str) -> &'static str {
+    if name.ends_with(".m4a") {
+        "audio/mp4"
+    } else {
+        "audio/wav"
+    }
+}
+
+/// What `d` sends for `n`: its own body if it has one, else its format's. A
+/// recording's `audio` goes with it where the format can carry a file:
+/// Discord's attached, ntfy's as the attachment, JSON's inline (base64);
+/// Slack's incoming webhooks can't, and get the link alone.
+pub fn payload(d: &Destination, n: &Notification, audio: Option<&Audio>) -> Payload {
+    let audio = audio.filter(|_| n.event == "recording");
     let json =
-        |v: Value| Payload { content_type: "application/json".into(), body: serde_json::to_vec(&v).unwrap_or_default(), headers: Vec::new(), attach: false };
+        |v: Value| Payload { content_type: "application/json".into(), body: serde_json::to_vec(&v).unwrap_or_default(), query: Vec::new(), multipart: false };
     if !d.body.trim().is_empty() {
         let ct = if is_json(&d.body) { "application/json" } else { "text/plain; charset=utf-8" };
-        return Payload { content_type: ct.into(), body: render(&d.body, n).into_bytes(), headers: Vec::new(), attach: false };
+        return Payload { content_type: ct.into(), body: render(&d.body, n).into_bytes(), query: Vec::new(), multipart: false };
     }
     match d.format {
-        Format::Discord => Payload { attach: has_audio && n.event == "recording", ..json(discord(n)) },
+        Format::Discord => Payload { multipart: audio.is_some(), ..json(discord(n)) },
         Format::Slack => json(slack(n)),
         Format::Ntfy => {
-            let mut headers = vec![("Title".to_string(), n.title.clone()), ("Tags".to_string(), tag(&n.event).to_string())];
+            let mut query = vec![("title".to_string(), n.title.clone()), ("tags".to_string(), tag(&n.event).to_string())];
             if matches!(n.event.as_str(), "emergency" | "signal") {
-                headers.push(("Priority".into(), "high".into()));
+                query.push(("priority".into(), "high".into()));
             }
             if !n.url.is_empty() {
-                headers.push(("Click".into(), n.url.clone()));
+                query.push(("click".into(), n.url.clone()));
             }
-            Payload { content_type: "text/plain; charset=utf-8".into(), body: n.text.clone().into_bytes(), headers, attach: false }
+            match audio {
+                // The file is the body; the words go beside it.
+                Some((bytes, name)) => {
+                    query.push(("message".into(), n.text.clone()));
+                    query.push(("filename".into(), name.clone()));
+                    Payload { content_type: audio_type(name).into(), body: bytes.clone(), query, multipart: false }
+                }
+                None => Payload { content_type: "text/plain; charset=utf-8".into(), body: n.text.clone().into_bytes(), query, multipart: false },
+            }
         }
-        Format::Json => json(serde_json::to_value(n).unwrap_or_default()),
+        Format::Json => {
+            let mut v = serde_json::to_value(n).unwrap_or_default();
+            if let Some((bytes, name)) = audio {
+                v["audio"] = json!({ "name": name, "type": audio_type(name), "base64": trunk_recorder_plugin::base64::encode(bytes) });
+            }
+            json(v)
+        }
     }
 }
 
@@ -263,24 +293,34 @@ mod tests {
             1792613980.0,
         );
         let d = |format: Format| Destination { name: "x".into(), format, ..Default::default() };
-        let discord: Value = serde_json::from_slice(&payload(&d(Format::Discord), &n, false).body).unwrap();
+        let discord: Value = serde_json::from_slice(&payload(&d(Format::Discord), &n, None).body).unwrap();
         let e = &discord["embeds"][0];
         assert_eq!(
             (e["title"].as_str(), e["color"].as_u64(), e["timestamp"].as_str()),
             (Some("LOCALTOWN FIRE PAGE"), Some(0xFB8C00), Some("2026-10-21T20:19:40Z"))
         );
         assert_eq!(e["fields"][1], json!({ "name": "Talkgroup", "value": "1 Fire Dispatch", "inline": true }));
-        assert!(!payload(&d(Format::Discord), &n, true).attach, "only a recording carries its file");
+        let file: Audio = (vec![1, 2, 3], "a.m4a".into());
+        assert!(!payload(&d(Format::Discord), &n, Some(&file)).multipart, "only a recording carries its file");
         n.event = "recording".into();
-        assert!(payload(&d(Format::Discord), &n, true).attach);
-        let slack: Value = serde_json::from_slice(&payload(&d(Format::Slack), &n, false).body).unwrap();
+        assert!(payload(&d(Format::Discord), &n, Some(&file)).multipart);
+        // ntfy: the file is the body, the words in the query; JSON: inline.
+        let ntfy = payload(&d(Format::Ntfy), &n, Some(&file));
+        assert_eq!((ntfy.body.clone(), ntfy.content_type.as_str()), (vec![1, 2, 3], "audio/mp4"));
+        assert!(
+            ntfy.query.contains(&("filename".to_string(), "a.m4a".to_string())) && ntfy.query.contains(&("message".to_string(), "wood:FD_PAGE".to_string()))
+        );
+        let inline: Value = serde_json::from_slice(&payload(&d(Format::Json), &n, Some(&file)).body).unwrap();
+        assert_eq!((inline["audio"]["name"].as_str(), inline["audio"]["base64"].as_str()), (Some("a.m4a"), Some("AQID")));
+        n.event = "signal".into();
+        let slack: Value = serde_json::from_slice(&payload(&d(Format::Slack), &n, None).body).unwrap();
         assert_eq!(slack["text"], "LOCALTOWN FIRE PAGE: wood:FD_PAGE");
-        let ntfy = payload(&d(Format::Ntfy), &n, false);
-        assert_eq!((ntfy.body.as_slice(), ntfy.headers[0].clone()), (&b"wood:FD_PAGE"[..], ("Title".to_string(), "LOCALTOWN FIRE PAGE".to_string())));
+        let ntfy = payload(&d(Format::Ntfy), &n, None);
+        assert_eq!((ntfy.body.as_slice(), ntfy.query[0].clone()), (&b"wood:FD_PAGE"[..], ("title".to_string(), "LOCALTOWN FIRE PAGE".to_string())));
         // Its own body wins over the format.
         let t = Destination { body: "{title} {url}".into(), ..d(Format::Discord) };
         n.url = "http://x/calls/a.m4a".into();
-        assert_eq!(payload(&t, &n, true).body, b"LOCALTOWN FIRE PAGE http://x/calls/a.m4a");
+        assert_eq!(payload(&t, &n, None).body, b"LOCALTOWN FIRE PAGE http://x/calls/a.m4a");
         assert_eq!(iso(0.0), "1970-01-01T00:00:00Z");
     }
 }

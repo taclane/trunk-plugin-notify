@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use trunk_recorder_plugin::{Endpoint, EndpointState, Host, Metrics};
 
-use crate::payload::{command_env, payload, Notification};
+use crate::payload::{self, audio_type, command_env, payload, Notification};
 use crate::settings::{Destination, Kind};
 
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -20,8 +20,8 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 /// A webhook that failed is tried again after these.
 const RETRIES: [Duration; 2] = [Duration::from_secs(2), Duration::from_secs(10)];
 
-/// A recording's audio, and its file name.
-pub type Audio = Arc<(Vec<u8>, String)>;
+/// A recording's audio, and its file name, shared by its destinations.
+pub type Audio = Arc<payload::Audio>;
 
 struct Job {
     n: Notification,
@@ -107,14 +107,14 @@ fn metrics(all: &BTreeMap<String, Health>) -> Metrics {
 pub fn send(dest: &Destination, n: &Notification, audio: Option<&(Vec<u8>, String)>) -> Result<(), String> {
     match dest.kind {
         Kind::Webhook => webhook(dest, n, audio),
-        Kind::Command => command(dest, n),
+        Kind::Command => command(dest, n, audio),
     }
 }
 
 /// A multipart body: Discord's `payload_json` and the file.
 fn multipart(json: &[u8], file: &(Vec<u8>, String)) -> (String, Vec<u8>) {
     let boundary = format!("trp-{:x}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
-    let kind = if file.1.ends_with(".m4a") { "audio/mp4" } else { "audio/wav" };
+    let kind = audio_type(&file.1);
     let mut b = Vec::with_capacity(json.len() + file.0.len() + 512);
     b.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"payload_json\"\r\nContent-Type: application/json\r\n\r\n").as_bytes());
     b.extend_from_slice(json);
@@ -136,22 +136,20 @@ fn webhook(dest: &Destination, n: &Notification, audio: Option<&(Vec<u8>, String
         .user_agent(concat!("trunk-plugin-notify/", env!("CARGO_PKG_VERSION")))
         .build()
         .into();
-    let p = payload(dest, n, audio.is_some());
-    let (content_type, body) = match audio.filter(|_| p.attach) {
+    let p = payload(dest, n, audio);
+    let (content_type, body) = match audio.filter(|_| p.multipart) {
         Some(file) => multipart(&p.body, file),
         None => (p.content_type.clone(), p.body.clone()),
     };
+    let url = with_query(&dest.url, &p.query);
     let method = if dest.method.trim().is_empty() { "POST".to_string() } else { dest.method.trim().to_ascii_uppercase() };
     let own = dest.header_list();
     let mut last = String::new();
     for wait in std::iter::once(Duration::ZERO).chain(RETRIES) {
         std::thread::sleep(wait);
-        let mut req = ureq::http::Request::builder().method(method.as_str()).uri(&dest.url);
+        let mut req = ureq::http::Request::builder().method(method.as_str()).uri(&url);
         if !own.iter().any(|(k, _)| k.eq_ignore_ascii_case("content-type")) {
             req = req.header("Content-Type", content_type.as_str());
-        }
-        for (k, v) in p.headers.iter().filter(|(k, _)| !own.iter().any(|(d, _)| d.eq_ignore_ascii_case(k))) {
-            req = req.header(k.as_str(), v.as_str());
         }
         for (k, v) in &own {
             req = req.header(k.as_str(), v.as_str());
@@ -168,10 +166,35 @@ fn webhook(dest: &Destination, n: &Notification, audio: Option<&(Vec<u8>, String
     Err(last)
 }
 
-fn command(dest: &Destination, n: &Notification) -> Result<(), String> {
+/// `url` with `query` added, each value percent-encoded.
+fn with_query(url: &str, query: &[(String, String)]) -> String {
+    let enc = |s: &str| {
+        s.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect::<String>()
+    };
+    query.iter().fold(url.to_string(), |u, (k, v)| format!("{u}{}{k}={}", if u.contains('?') { '&' } else { '?' }, enc(v)))
+}
+
+/// A recording for a command: written to a file of its own (`TRP_AUDIO`), removed when it's done.
+struct AudioFile(std::path::PathBuf);
+
+impl Drop for AudioFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+fn command(dest: &Destination, n: &Notification, audio: Option<&payload::Audio>) -> Result<(), String> {
     if dest.command.trim().is_empty() {
         return Err("no command".into());
     }
+    let file = match audio.filter(|_| n.event == "recording") {
+        Some((bytes, name)) => {
+            let path = std::env::temp_dir().join(format!("trp-notify-{}-{name}", n.id));
+            std::fs::write(&path, bytes).map_err(|e| format!("couldn't write the recording for it: {e}"))?;
+            Some(AudioFile(path))
+        }
+        None => None,
+    };
     let mut c = if cfg!(windows) {
         let mut c = Command::new("cmd");
         c.arg("/C").arg(&dest.command);
@@ -183,6 +206,9 @@ fn command(dest: &Destination, n: &Notification) -> Result<(), String> {
     };
     // (Its output isn't ours: the recorder reads this plugin's stdout.)
     c.envs(command_env(n)).stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::piped());
+    if let Some(f) = &file {
+        c.env("TRP_AUDIO", &f.0);
+    }
     let mut child = c.spawn().map_err(|e| format!("couldn't run it: {e}"))?;
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(serde_json::to_string(n).unwrap_or_default().as_bytes());
@@ -265,9 +291,16 @@ mod tests {
         send(&dest, &n, None).unwrap();
         let got = std::fs::read_to_string(&out).unwrap();
         assert!(got.starts_with("csp|CLMRN:CSP_FIRE on TG 401|{"), "{got}");
-        let fail = Destination { command: "echo nope >&2; exit 3".into(), ..dest };
+        let fail = Destination { command: "echo nope >&2; exit 3".into(), ..dest.clone() };
         let e = send(&fail, &n, None).unwrap_err();
         assert!(e.contains("nope"), "{e}");
+        // A recording: its file, for as long as the command runs.
+        let size = dir.join("size.txt");
+        let rec = Destination { command: format!("wc -c < \"$TRP_AUDIO\" > {}", size.display()), ..dest };
+        n.event = "recording".into();
+        send(&rec, &n, Some(&(vec![1, 2, 3], "call.wav".into()))).unwrap();
+        assert_eq!(std::fs::read_to_string(&size).unwrap().trim(), "3");
+        assert!(!std::env::temp_dir().join(format!("trp-notify-{}-call.wav", n.id)).exists(), "removed after");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -279,6 +312,12 @@ mod tests {
         assert!(text.starts_with(&format!("--{boundary}\r\nContent-Disposition: form-data; name=\"payload_json\"")), "{text}");
         assert!(text.contains("name=\"files[0]\"; filename=\"20341-1792.m4a\"\r\nContent-Type: audio/mp4"), "{text}");
         assert!(text.ends_with(&format!("--{boundary}--\r\n")));
+    }
+
+    #[test]
+    fn query_values_are_encoded() {
+        let q = [("title".to_string(), "FIRE → Station 4".to_string()), ("filename".to_string(), "a.m4a".to_string())];
+        assert_eq!(with_query("https://ntfy.sh/t", &q), "https://ntfy.sh/t?title=FIRE%20%E2%86%92%20Station%204&filename=a.m4a");
     }
 
     #[test]

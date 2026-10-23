@@ -18,10 +18,12 @@ pub struct Settings {
     ///
     /// Where rules send word: a webhook, or a command on this computer.
     pub destinations: Vec<Destination>,
-    /// This recorder's address
+    /// Link recordings from
     ///
-    /// How the destinations reach this recorder (http://100.64.0.5:8091): recordings are linked from
-    /// it. Empty: they aren't linked (Discord still gets the file).
+    /// A recording goes as a file to Discord and ntfy, inside the JSON of JSON webhooks, and to commands
+    /// (TRP_AUDIO). Slack's webhooks can't take a file, so they need a link: this recorder's address as
+    /// the people reading the message reach it (http://100.64.0.5:8091). Every recording then has a link
+    /// too. Empty: no links. A link plays the call while Setup's Recording settings keep its audio.
     #[schemars(extend("format" = "uri"))]
     pub recorder_address: String,
 }
@@ -29,7 +31,10 @@ pub struct Settings {
 /// Rule
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", default)]
-#[schemars(extend("x-title" = "name"))]
+#[schemars(extend(
+    "x-title" = "name",
+    "x-summary" = ["{event}", "{signals|any signal}", "{patterns|any tone}", "{systems|any system}", "TG {talkgroups}", "radio {units}", "{followUp}", "→ {to|nowhere yet}"]
+))]
 pub struct Rule {
     /// Name
     #[schemars(extend("x-required" = true))]
@@ -84,8 +89,7 @@ pub struct Rule {
     pub message: String,
     /// Then the recording
     ///
-    /// Once the call is saved, a second notification with its audio: Discord gets the file, others a
-    /// link (when this recorder's address is set).
+    /// Once the call is saved, a second notification with its audio (see "Link recordings from").
     pub follow_up: bool,
     /// Send to
     #[schemars(extend("x-ref" = "destinations"))]
@@ -198,6 +202,7 @@ pub enum Encryption {
 #[serde(rename_all = "camelCase", default)]
 #[schemars(extend(
     "x-title" = "name",
+    "x-summary" = ["{type}", "{format}", "{command}"],
     "x-actions" = [
         { "id": "test", "label": "Send a test", "hint": "Sends a test notification now, as it's set up here" },
         { "id": "test_recording", "label": "Send a test recording", "hint": "As a call's recording follows: a few seconds of a page (Discord: as a file)" }

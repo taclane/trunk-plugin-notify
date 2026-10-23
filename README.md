@@ -15,8 +15,8 @@ recorder's computer. A call's recording can follow.
 - Discord embeds, Slack blocks, ntfy (title, priority, click-through), the notification's JSON,
   or a body template of your own; headers for tokens
 - Commands, given the notification on stdin and as `TRP_*` variables
-- **Then the recording**: once the call is saved, a second notification with its audio (Discord
-  gets the file; others a link)
+- **Then the recording**: once the call is saved, a second notification with its audio: a file for
+  Discord and ntfy, inline for JSON webhooks, a file's path for commands, a link where a file can't go
 - **Send a test** and **Send a test recording** on each destination
 - Its own page in the recorder's interface, and a **Notify** button on each signal
 
@@ -51,7 +51,7 @@ rule for it here and opens this page.
 | ------- | --- | ----------- |
 | Rules | `rules` | What to watch for, and where to send word (below) |
 | Destinations | `destinations` | Where rules send word (below) |
-| This recorder's address | `recorderAddress` | How the destinations reach the recorder (`http://100.64.0.5:8091`): recordings are linked from it |
+| Link recordings from | `recorderAddress` | The recorder's address as people reading notifications reach it (`http://100.64.0.5:8091`): recordings are linked from it ([below](#recordings)) |
 
 ### Rules
 
@@ -71,7 +71,7 @@ Every condition a rule sets has to hold; one left empty is any. For "this or tha
 | Not again within, s | `cooldownS` | `60` | Once for the same system, talkgroup and signal (or pattern) in this long |
 | Title | `title` | | The headline. Placeholders: `{system}` `{site}` `{talkgroup}` `{alpha_tag}` `{unit}` `{unit_tag}` `{signals}` `{text}` `{rule}` `{event}` |
 | Message | `message` | | The words; empty: what happened. The same placeholders |
-| Then the recording | `followUp` | `false` | Once the call is saved, a second notification (`recording`) with its audio |
+| Then the recording | `followUp` | `false` | Once the call is saved, a second notification (`recording`) with its audio ([below](#recordings)) |
 | Send to | `to` | | Destinations, by name |
 
 A new talkgroup or radio is one first heard after this plugin has known the system an hour, so
@@ -89,13 +89,32 @@ plugin's data folder.
 | Method | `method` | Webhooks: empty for POST |
 | Headers | `headers` | Webhooks: one a line, `Authorization: Bearer abc` |
 | Own body | `body` | Webhooks: a template in place of the format: `{title}` `{text}` `{rule}` `{event}` `{system}` `{talkgroup}` `{alpha_tag}` `{unit}` `{signals}` `{url}` `{json}`. One that begins `{` is sent as JSON, its values escaped |
-| Command | `command` | Run by the shell, with the notification's JSON on stdin and `TRP_TITLE`, `TRP_TEXT`, `TRP_RULE`, `TRP_EVENT`, `TRP_SYSTEM`, `TRP_TALKGROUP`, `TRP_UNIT`, `TRP_SIGNALS` and `TRP_URL`. It has 30 seconds |
+| Command | `command` | Run by the shell, with the notification's JSON on stdin and `TRP_TITLE`, `TRP_TEXT`, `TRP_RULE`, `TRP_EVENT`, `TRP_SYSTEM`, `TRP_TALKGROUP`, `TRP_UNIT`, `TRP_SIGNALS`, `TRP_URL` and, for a recording, `TRP_AUDIO`. It has 30 seconds |
+
+### Recordings
+
+A rule with **Then the recording** sends a second notification once the call is saved, with its
+audio (M4A when another plugin has the recorder make one, else WAV; up to 8 MB):
+
+| Destination | The audio |
+| ----------- | --------- |
+| Discord | Attached to the message |
+| ntfy | The notification's attachment |
+| JSON webhook | Inline: `audio` with its `name`, `type` and `base64` |
+| Slack | A link only: Slack's incoming webhooks can't take a file |
+| Own body | A link only (`{url}`) |
+| Command | A file of its own, `TRP_AUDIO`, there while the command runs |
+
+**Link recordings from** gives every recording notification a link to the call as well, and is the
+only way Slack gets one: set it to the recorder's address as the people reading the notifications
+reach it, such as its Tailscale address. The link plays the call for as long as the recorder keeps
+its audio (Setup → Recording). Empty: no links.
 
 A webhook that can't be reached, or answers with a server error, is tried twice more (after 2 and
 10 seconds). Email and many other services are reachable through an
 [Apprise API](https://github.com/caronc/apprise-api) URL.
 
-Recordings of calls decrypted with your keys are never attached or linked.
+Recordings of calls decrypted with your keys are never sent or linked.
 
 ## What was sent
 
