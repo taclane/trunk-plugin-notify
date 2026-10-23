@@ -338,7 +338,7 @@ dependencies = [
 [[package]]
 name = "trunk-recorder-plugin"
 version = "0.6.0"
-source = "git+https://github.com/taclane/trunk-recorder-pro?branch=feature%2Fplugin-ui#6a5663f6322d6e9743b20a39417008e1a8d6aa3c"
+source = "git+https://github.com/taclane/trunk-recorder-pro?branch=feature%2Fplugin-ui#37eb693eec65cf0ddcd8f40559798be000d4281d"
 dependencies = [
  "schemars",
  "serde",
