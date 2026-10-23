@@ -177,13 +177,13 @@ impl Default for ToneSpec {
 }
 
 /// How far a heard tone may be from `hz` and still be it, Hz: as the recorder matches signals.
-/// Measured in audio, 2.5 %; from Phase 2's tone frames, which name a tone on a 31.25 Hz grid,
+/// Measured in audio, 1.5 % (what selective-calling decoders must accept); from Phase 2's tone frames, which name a tone on a 31.25 Hz grid,
 /// 15.7 Hz and 0.5 %.
 pub fn tolerance(hz: f64, from_frame: bool) -> f64 {
     if from_frame {
         15.7 + 0.005 * hz
     } else {
-        0.025 * hz
+        0.015 * hz
     }
 }
 

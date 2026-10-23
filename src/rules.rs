@@ -239,8 +239,8 @@ mod tests {
         let digits = |d: &str| Notice { event: Some(Event::Tone), pattern: "digits".into(), digits: d.into(), ..Default::default() };
         assert!(matches(&keys, &digits("072864")) && !matches(&keys, &digits("KNOX 072864")));
         // A little further, when it says.
-        let wide = rule(json!({ "name": "rare", "event": "tone", "tones": [{ "pattern": "two_tone", "tonesHz": [313.0, 1642.0], "extraTolerancePct": 4 }] }));
-        assert!(matches(&wide, &page([330.0, 1642.0], false)), "within 2.5 % + 4 %");
+        let wide = rule(json!({ "name": "rare", "event": "tone", "tones": [{ "pattern": "two_tone", "tonesHz": [313.0, 1642.0], "extraTolerancePct": 5 }] }));
+        assert!(matches(&wide, &page([330.0, 1642.0], false)), "within 1.5 % + 5 %");
         // DTMF and KNOX are kinds apart.
         let knox_only = rule(json!({ "name": "k", "event": "tone", "patterns": ["knox"] }));
         assert!(matches(&knox_only, &digits("KNOX 072864")) && !matches(&knox_only, &digits("072864")));

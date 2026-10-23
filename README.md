@@ -84,7 +84,7 @@ and lengths only where they're played (▶ plays it; pressed again, stops). In t
 `pattern`, `tonesHz` (A then B for a page), `digits` (`KNOX ` first for KNOX; Morse: the text) and
 `lengthsS` (not matched, since pagers vary them).
 
-A tone heard counts as one typed in as the recorder counts a signal: within 2.5 % of it when it's
+A tone heard counts as one typed in as the recorder counts a signal: within ±1.5 % of it when it's
 measured in the audio (P25 Phase 1, analog), and within 15.7 Hz + 0.5 % when a P25 Phase 2 tone
 frame names it (those name tones only to the nearest 31.25 Hz). **Extra tolerance, %**
 (`extraTolerancePct`) widens both by that much. The page says what it comes to, in Hz, for the
