@@ -34,10 +34,11 @@ pub fn now() -> f64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
 }
 
-/// A notification whose call's recording is to follow it, from rule `rule` (its place in the rules).
+/// A notification whose call's recording is to follow it, to its rule's destinations as they were
+/// when it fired (the rules may change before the call is saved).
 struct FollowUp {
     n: Notification,
-    rule: usize,
+    to: Vec<String>,
     since: Instant,
 }
 
@@ -201,13 +202,12 @@ impl Plugin for Notify {
         let url = if base.is_empty() || r.decrypted { String::new() } else { format!("{base}/calls/{}.{ext}", c.path) };
         let secs = r.call_length_ms as f64 / 1000.0;
         // Once to each rule's destinations, however many of its notifications asked (a page and its warble).
-        let mut sent: Vec<usize> = Vec::new();
+        let mut sent: Vec<String> = Vec::new();
         for f in due {
-            if sent.contains(&f.rule) {
+            if sent.contains(&f.n.rule) {
                 continue;
             }
-            sent.push(f.rule);
-            let Some(rule) = self.settings.rules.get(f.rule) else { continue };
+            sent.push(f.n.rule.clone());
             let mut n = f.n;
             n.id = self.notifier.next_id();
             n.event = "recording".into();
@@ -215,8 +215,7 @@ impl Plugin for Notify {
             n.url = url.clone();
             n.call_num = Some(r.call_num);
             n.detail = json!({ "path": c.path, "length": secs });
-            let to = rule.to.clone();
-            self.tell(n, &to, audio.clone());
+            self.tell(n, &f.to, audio.clone());
         }
         self.host.call_result(&c.path, Outcome::Ok, "recording sent", "");
     }
@@ -260,7 +259,7 @@ impl Notify {
         for (i, note) in self.notifier.notice(&self.settings.rules, &n) {
             let rule = &self.settings.rules[i];
             if rule.follow_up {
-                self.follow_ups.push(FollowUp { n: note.clone(), rule: i, since: Instant::now() });
+                self.follow_ups.push(FollowUp { n: note.clone(), to: rule.to.clone(), since: Instant::now() });
             }
             let to = rule.to.clone();
             self.tell(note, &to, None);
