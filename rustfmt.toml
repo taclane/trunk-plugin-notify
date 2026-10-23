@@ -1,0 +1,3 @@
+# The same style as Trunk Recorder Pro: long lines, compact expressions.
+max_width = 160
+use_small_heuristics = "Max"

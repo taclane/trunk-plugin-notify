@@ -1,0 +1,140 @@
+# Push a tag v<version> (the version in Cargo.toml) to build the plugin for
+# every platform Trunk Recorder Pro runs on and publish a GitHub release:
+#
+#   <id>-<version>-<target>.tar.gz   (.zip on Windows) the executable, README, LICENSE
+#   <id>-<version>.manifest.json     what `<id> --describe` prints
+#   SHA256SUMS                       what the registry pins
+#
+# Each file also gets a build provenance attestation: a signed record that
+# GitHub Actions built it from this repository at the tagged commit. Check
+# one with `gh attestation verify <file> --repo <owner>/<repo>`.
+#
+# The names are what the recorder's installer looks for: keep them.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      id: ${{ steps.m.outputs.id }}
+      version: ${{ steps.m.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: m
+        run: |
+          id=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].name')
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "::error::tag $GITHUB_REF_NAME isn't v$version (Cargo.toml)"; exit 1; }
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: meta
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux against glibc 2.28, so it runs on any distribution since ~2019 (as the recorder does).
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-latest }
+          # One binary for Apple silicon and Intel.
+          - { target: universal-apple-darwin, os: macos-14 }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    env:
+      ID: ${{ needs.meta.outputs.id }}
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with: { key: "${{ matrix.target }}" }
+
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          pip install ziglang
+          cargo install cargo-zigbuild --locked
+          cargo zigbuild --locked --release --target ${{ matrix.target }}.2.28
+          echo "BIN=target/${{ matrix.target }}/release/$ID" >> "$GITHUB_ENV"
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cargo build --locked --release --target aarch64-apple-darwin
+          cargo build --locked --release --target x86_64-apple-darwin
+          lipo -create -output "$ID" "target/aarch64-apple-darwin/release/$ID" "target/x86_64-apple-darwin/release/$ID"
+          echo "BIN=$ID" >> "$GITHUB_ENV"
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        env: { RUSTFLAGS: "-C target-feature=+crt-static" }
+        run: |
+          cargo build --locked --release --target ${{ matrix.target }}
+          echo "BIN=target/${{ matrix.target }}/release/$ID.exe" >> "$GITHUB_ENV"
+
+      - name: It runs, and says who it is
+        if: matrix.target != 'aarch64-unknown-linux-gnu'
+        shell: bash
+        run: |
+          "./$BIN" --describe > manifest.json
+          python3 .github/check_manifest.py manifest.json --release
+
+      - name: Package
+        shell: bash
+        run: |
+          name="$ID-$VERSION-${{ matrix.target }}"
+          mkdir -p "pkg/$name" dist
+          cp "$BIN" README.md LICENSE "pkg/$name/"
+          if [ "$RUNNER_OS" = Windows ]; then
+            (cd pkg && 7z a -tzip "../dist/$name.zip" "$name" >/dev/null)
+          else
+            tar -C pkg -czf "dist/$name.tar.gz" "$name"
+          fi
+          if [ "${{ matrix.target }}" = x86_64-unknown-linux-gnu ]; then
+            cp manifest.json "dist/$ID-$VERSION.manifest.json"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/*
+
+  release:
+    needs: [meta, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # For the provenance attestations.
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { pattern: dist-*, path: dist, merge-multiple: true }
+      - name: Checksums
+        run: |
+          cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - name: Build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-checksums: dist/SHA256SUMS
+      - name: Release notes (this version's section of CHANGELOG.md, if there is one)
+        run: |
+          v="${{ needs.meta.outputs.version }}"
+          awk -v v="## [$v]" 'index($0, v) == 1 {on = 1; next} on && /^## / {exit} on' CHANGELOG.md > notes.md 2>/dev/null || true
+          [ -s notes.md ] || echo "${{ needs.meta.outputs.id }} $v" > notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: notes.md
+          files: dist/*

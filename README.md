@@ -1,0 +1,109 @@
+# Notifications for Trunk Recorder Pro
+
+Tells you when something happens on the radio: a fire page goes out, a siren is set off, a radio
+sends an emergency alarm, a talkgroup is heard for the first time. Rules say what to watch for;
+destinations say where word goes: Discord, Slack, ntfy, any webhook, or a command on the
+recorder's computer. A call's recording can follow.
+
+## Features
+
+- Rules over a system's **signals** (named pages, sirens, DTMF strings, Morse IDs), any **tone
+  pattern**, **emergencies** (a call flagged emergency, or a radio's alarm), **calls** beginning,
+  and **new talkgroups** and **radios**
+- Narrowed by system, talkgroup, radio and encryption; a cooldown so a rule fires once per event
+- Your own title and message ("LOCALTOWN FIRE PAGE"), with placeholders
+- Discord embeds, Slack blocks, ntfy (title, priority, click-through), the notification's JSON,
+  or a body template of your own; headers for tokens
+- Commands, given the notification on stdin and as `TRP_*` variables
+- **Then the recording**: once the call is saved, a second notification with its audio (Discord
+  gets the file; others a link)
+- **Send a test** and **Send a test recording** on each destination
+- Its own page in the recorder's interface, and a **Notify** button on each signal
+
+Needs a Trunk Recorder Pro with tone signals and plugin pages (the plugin SDK 0.6.0). Until those
+are released, it's built against the branch that brings them.
+
+Staged here; it's to move to [TrunkRecorder](https://github.com/TrunkRecorder) as an official plugin.
+
+## Install
+
+In Trunk Recorder Pro, open **Plugins**, choose **Install from GitHub…**, and enter
+`taclane/trunk-plugin-notify`. Turn it on: **Notifications** appears in the navigation.
+
+To build it yourself:
+
+```sh
+cargo build --release
+```
+
+and add `target/release/notify` with **Add from a file…**.
+
+## Signals
+
+A signal is a tone pattern a system sends, with a name: `FD_PAGE`, `SIREN_SIGNAL_1`. They're
+made in the recorder, on each system's **Tones** card (Radio system tab): **Add** on a pattern
+heard, or **New signal** to type one in from a paging list. A signal's **Notify** button adds a
+rule for it here and opens this page.
+
+## Configure
+
+| Setting | Key | Description |
+| ------- | --- | ----------- |
+| Rules | `rules` | What to watch for, and where to send word (below) |
+| Destinations | `destinations` | Where rules send word (below) |
+| This recorder's address | `recorderAddress` | How the destinations reach the recorder (`http://100.64.0.5:8091`): recordings are linked from it |
+
+### Rules
+
+Every condition a rule sets has to hold; one left empty is any. For "this or that", make two.
+
+| Setting | Key | Default | Description |
+| ------- | --- | ------- | ----------- |
+| Name | `name` | | What it's called; the title when it has none |
+| On | `enabled` | `true` | |
+| When | `event` | `signal` | `signal`, `tone`, `emergency`, `call`, `new_talkgroup` or `new_radio` |
+| Systems | `systems` | | Short names |
+| Signals | `signals` | | `signal`: which, as `system:ID` (an `ID` alone: any system's) |
+| Tone patterns | `patterns` | | `tone`: `two_tone`, `long`, `hi_low`, `pulsed`, `digits`, `morse`, `sequence`, `beep` |
+| Talkgroups | `talkgroups` | | Numbers, ranges (`1000-1099`) and patterns (`507*`) |
+| Radios | `units` | | The same, for radio IDs |
+| Encryption | `encrypted` | `either` | Calls: `either`, `encrypted` or `clear` |
+| Not again within, s | `cooldownS` | `60` | Once for the same system, talkgroup and signal (or pattern) in this long |
+| Title | `title` | | The headline. Placeholders: `{system}` `{site}` `{talkgroup}` `{alpha_tag}` `{unit}` `{unit_tag}` `{signals}` `{text}` `{rule}` `{event}` |
+| Message | `message` | | The words; empty: what happened. The same placeholders |
+| Then the recording | `followUp` | `false` | Once the call is saved, a second notification (`recording`) with its audio |
+| Send to | `to` | | Destinations, by name |
+
+A new talkgroup or radio is one first heard after this plugin has known the system an hour, so
+starting with a new system doesn't announce everything on it. What's been heard is kept in the
+plugin's data folder.
+
+### Destinations
+
+| Setting | Key | Description |
+| ------- | --- | ----------- |
+| Name | `name` | What rules send to it by |
+| Kind | `type` | `webhook` or `command` |
+| Format | `format` | Webhooks: `json` (the notification), `discord`, `slack` or `ntfy` |
+| URL | `url` | Webhooks: where to |
+| Method | `method` | Webhooks: empty for POST |
+| Headers | `headers` | Webhooks: one a line, `Authorization: Bearer abc` |
+| Own body | `body` | Webhooks: a template in place of the format: `{title}` `{text}` `{rule}` `{event}` `{system}` `{talkgroup}` `{alpha_tag}` `{unit}` `{signals}` `{url}` `{json}`. One that begins `{` is sent as JSON, its values escaped |
+| Command | `command` | Run by the shell, with the notification's JSON on stdin and `TRP_TITLE`, `TRP_TEXT`, `TRP_RULE`, `TRP_EVENT`, `TRP_SYSTEM`, `TRP_TALKGROUP`, `TRP_UNIT`, `TRP_SIGNALS` and `TRP_URL`. It has 30 seconds |
+
+A webhook that can't be reached, or answers with a server error, is tried twice more (after 2 and
+10 seconds). Email and many other services are reachable through an
+[Apprise API](https://github.com/caronc/apprise-api) URL.
+
+Recordings of calls decrypted with your keys are never attached or linked.
+
+## What was sent
+
+Each notification, and how each destination took it, is in the plugin's log on its page. How
+each destination is doing (up, down, its last error) is on the recorder's **Health** page.
+
+See [example messages](example_messages.md) for what each format sends.
+
+## License
+
+GPL-3.0-or-later, like Trunk Recorder.

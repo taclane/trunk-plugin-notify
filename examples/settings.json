@@ -1,0 +1,17 @@
+{
+  "rules": [
+    {
+      "name": "Fire pages",
+      "event": "signal",
+      "signals": ["wood:FD_PAGE", "wood:SIREN_SIGNAL_2"],
+      "title": "LOCALTOWN FIRE PAGE",
+      "followUp": true,
+      "to": ["Station pager"]
+    },
+    { "name": "Emergencies", "event": "emergency", "systems": ["clmrn-I"], "to": ["Station pager"] }
+  ],
+  "destinations": [
+    { "name": "Station pager", "type": "webhook", "format": "discord", "url": "https://discord.com/api/webhooks/…" }
+  ],
+  "recorderAddress": "http://100.64.0.5:8091"
+}

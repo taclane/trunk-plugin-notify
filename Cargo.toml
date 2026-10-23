@@ -1,0 +1,22 @@
+[package]
+name = "notify"
+version = "0.1.0"
+edition = "2021"
+description = "Notifications: rules over what the recorder hears (signals, tones, emergencies, new talkgroups and radios), sent to webhooks (Discord, Slack, ntfy, JSON) and commands."
+license = "GPL-3.0-or-later"
+repository = "https://github.com/taclane/trunk-plugin-notify"
+authors = ["Taclane"]
+publish = false
+
+[dependencies]
+# SDK 0.6.0 (plugin pages, buttons, live settings) isn't on crates.io yet: built from the branch
+# that brings it. Becomes trunk-recorder-plugin = "0.6.0" once it's published.
+trunk-recorder-plugin = { git = "https://github.com/taclane/trunk-recorder-pro", branch = "feature/plugin-ui" }
+schemars = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+
+[profile.release]
+strip = true
+lto = true

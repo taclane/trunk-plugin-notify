@@ -1,0 +1,12 @@
+/target
+/dist
+# Developing against a local checkout of the SDK ([patch] in .cargo/config.toml).
+/.cargo/config.toml
+# Written by CI (cargo run -- --describe).
+/manifest.json
+.claude/
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
