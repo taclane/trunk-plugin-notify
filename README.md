@@ -61,10 +61,11 @@ Every condition a rule sets has to hold; one left empty is any. For "this or tha
 | ------- | --- | ------- | ----------- |
 | Name | `name` | | What it's called; the title when it has none |
 | On | `enabled` | `true` | |
-| When | `event` | `signal` | `signal`, `tone`, `emergency`, `call`, `new_talkgroup` or `new_radio` |
+| When | `event` | `signal` | `signal`, `tone` (a tone is heard), `emergency`, `call`, `new_talkgroup` or `new_radio` |
 | Systems | `systems` | | Short names |
 | Signals | `signals` | | `signal`: which, as `system:ID` (an `ID` alone: any system's) |
-| Tone patterns | `patterns` | | `tone`: `two_tone`, `long`, `hi_low`, `pulsed`, `digits`, `morse`, `sequence`, `beep` |
+| Kinds of tone | `patterns` | | `tone`: `two_tone`, `long`, `hi_low`, `pulsed`, `digits`, `morse`, `sequence`, `beep` |
+| Tones | `tones` | | `tone`: particular tones, typed in ([below](#tones-typed-in)); empty: any tone of those kinds |
 | Talkgroups | `talkgroups` | | Numbers, ranges (`1000-1099`) and patterns (`507*`) |
 | Radios | `units` | | The same, for radio IDs |
 | Encryption | `encrypted` | `either` | Calls: `either`, `encrypted` or `clear` |
@@ -73,6 +74,20 @@ Every condition a rule sets has to hold; one left empty is any. For "this or tha
 | Message | `message` | | The words; empty: what happened. The same placeholders |
 | Then the recording | `followUp` | `false` | Once the call is saved, a second notification (`recording`) with its audio ([below](#recordings)) |
 | Send to | `to` | | Destinations, by name |
+
+### Tones typed in
+
+A rule for "a tone is heard" can name particular tones: a page from a paging list that hasn't been
+heard on the air yet, say a Quick Call II pair at 313.0 and 1642.0 Hz. Each has its pattern
+(`pattern`), its tones (`tonesHz`, A then B for a page) or digits (`digits`, `KNOX ` first for KNOX)
+or Morse text, its lengths (`lengthsS`, what ▶ plays on the page; not matched, since pagers vary
+them) and, if you want it narrower or wider, a tolerance (`toleranceHz`). Without one, a tone counts
+as the recorder counts a signal's: within 2.5 % when it's measured in the audio (P25 Phase 1,
+analog), and within 15.7 Hz + 0.5 % when a Phase 2 tone frame names it (they name tones on a
+31.25 Hz grid). The page says what that comes to for the tones typed in, and ▶ plays them (again to
+stop).
+
+Tones that are heard and named on a system's Tones card are its **signals**: "a signal is heard".
 
 A new talkgroup or radio is one first heard after this plugin has known the system an hour, so
 starting with a new system doesn't announce everything on it. What's been heard is kept in the
