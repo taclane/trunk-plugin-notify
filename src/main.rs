@@ -9,7 +9,6 @@ mod rules;
 mod seen;
 mod settings;
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -50,8 +49,6 @@ struct Notify {
     seen: Seen,
     saved: Instant,
     follow_ups: Vec<FollowUp>,
-    /// Talkgroups' names as calls gave them, by system (for radios' alarms, which don't).
-    names: HashMap<(String, u32), String>,
     data_dir: PathBuf,
 }
 
@@ -81,17 +78,7 @@ impl Plugin for Notify {
         host.info(summary(&settings, Some(&host)));
         let sender = deliver::Sender::start(host.clone());
         let seen = Seen::load(&setup.data_dir);
-        Ok(Notify {
-            host,
-            settings,
-            notifier: Notifier::default(),
-            sender,
-            seen,
-            saved: Instant::now(),
-            follow_ups: Vec::new(),
-            names: HashMap::new(),
-            data_dir: setup.data_dir,
-        })
+        Ok(Notify { host, settings, notifier: Notifier::default(), sender, seen, saved: Instant::now(), follow_ups: Vec::new(), data_dir: setup.data_dir })
     }
 
     fn tone(&mut self, t: ToneEvent) {
@@ -119,7 +106,6 @@ impl Plugin for Notify {
     }
 
     fn call_start(&mut self, c: CallInfo) {
-        self.names.insert((c.short_name.clone(), c.talkgroup), c.talkgroup_tag.clone());
         let unit = c.sources.last().map(|s| s.unit).or(c.units.last().copied()).filter(|&u| u != 0);
         let tag_of = |u: u32| c.sources.iter().find(|s| s.unit == u).map_or(String::new(), |s| s.tag.clone());
         let unit_tag = unit.map_or(String::new(), tag_of);
@@ -170,7 +156,7 @@ impl Plugin for Notify {
         if u.kind != "emergency_alarm" || u.unit == 0 {
             return;
         }
-        let alpha = u.talkgroup.and_then(|tg| self.names.get(&(u.short_name.clone(), tg)).cloned()).unwrap_or_default();
+        let alpha = u.alpha_tag.clone();
         self.fire(Notice {
             event: Some(Event::Emergency),
             system: u.short_name.clone(),
