@@ -166,13 +166,13 @@ pub struct ToneSpec {
     /// Digits (`KNOX ` first for KNOX tones); Morse: the text.
     pub digits: String,
     pub lengths_s: Vec<f64>,
-    /// How far a heard tone may be, Hz; 0: as the recorder matches signals.
-    pub tolerance_hz: f64,
+    /// How much further than usual ([`tolerance`]) a heard tone may be, % of it.
+    pub extra_tolerance_pct: f64,
 }
 
 impl Default for ToneSpec {
     fn default() -> Self {
-        ToneSpec { pattern: Pattern::TwoTone, tones_hz: Vec::new(), digits: String::new(), lengths_s: Vec::new(), tolerance_hz: 0.0 }
+        ToneSpec { pattern: Pattern::TwoTone, tones_hz: Vec::new(), digits: String::new(), lengths_s: Vec::new(), extra_tolerance_pct: 0.0 }
     }
 }
 
@@ -199,8 +199,10 @@ pub enum Pattern {
     HiLow,
     /// Pulsed tone
     Pulsed,
-    /// DTMF / KNOX digits
+    /// DTMF digits
     Digits,
+    /// KNOX digits
+    Knox,
     /// Morse ID
     Morse,
     /// Tone sequence
@@ -217,6 +219,7 @@ impl Pattern {
             Pattern::HiLow => "hi_low",
             Pattern::Pulsed => "pulsed",
             Pattern::Digits => "digits",
+            Pattern::Knox => "knox",
             Pattern::Morse => "morse",
             Pattern::Sequence => "sequence",
             Pattern::Beep => "beep",

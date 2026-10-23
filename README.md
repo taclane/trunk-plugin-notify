@@ -64,7 +64,7 @@ Every condition a rule sets has to hold; one left empty is any. For "this or tha
 | When | `event` | `signal` | `signal`, `tone` (a tone is heard), `emergency`, `call`, `new_talkgroup` or `new_radio` |
 | Systems | `systems` | | Short names |
 | Signals | `signals` | | `signal`: which, as `system:ID` (an `ID` alone: any system's) |
-| Kinds of tone | `patterns` | | `tone`: `two_tone`, `long`, `hi_low`, `pulsed`, `digits`, `morse`, `sequence`, `beep` |
+| Kinds of tone | `patterns` | | `tone`: `two_tone`, `long`, `hi_low`, `pulsed`, `digits` (DTMF), `knox`, `morse`, `sequence`, `beep` |
 | Tones | `tones` | | `tone`: particular tones, typed in ([below](#tones-typed-in)); empty: any tone of those kinds |
 | Talkgroups | `talkgroups` | | Numbers, ranges (`1000-1099`) and patterns (`507*`) |
 | Radios | `units` | | The same, for radio IDs |
@@ -78,14 +78,17 @@ Every condition a rule sets has to hold; one left empty is any. For "this or tha
 ### Tones typed in
 
 A rule for "a tone is heard" can name particular tones: a page from a paging list that hasn't been
-heard on the air yet, say a Quick Call II pair at 313.0 and 1642.0 Hz. Each has its pattern
-(`pattern`), its tones (`tonesHz`, A then B for a page) or digits (`digits`, `KNOX ` first for KNOX)
-or Morse text, its lengths (`lengthsS`, what ▶ plays on the page; not matched, since pagers vary
-them) and, if you want it narrower or wider, a tolerance (`toleranceHz`). Without one, a tone counts
-as the recorder counts a signal's: within 2.5 % when it's measured in the audio (P25 Phase 1,
-analog), and within 15.7 Hz + 0.5 % when a Phase 2 tone frame names it (they name tones on a
-31.25 Hz grid). The page says what that comes to for the tones typed in, and ▶ plays them (again to
-stop).
+heard on the air yet, say a Quick Call II pair at 313.0 and 1642.0 Hz. The page asks for what each kind
+needs: a page's tone A and tone B, a long tone's one tone, DTMF or KNOX digits, a Morse ID's text,
+and lengths only where they're played (▶ plays it; pressed again, stops). In the settings each is
+`pattern`, `tonesHz` (A then B for a page), `digits` (`KNOX ` first for KNOX; Morse: the text) and
+`lengthsS` (not matched, since pagers vary them).
+
+A tone heard counts as one typed in as the recorder counts a signal: within 2.5 % of it when it's
+measured in the audio (P25 Phase 1, analog), and within 15.7 Hz + 0.5 % when a P25 Phase 2 tone
+frame names it (those name tones only to the nearest 31.25 Hz). **Extra tolerance, %**
+(`extraTolerancePct`) widens both by that much. The page says what it comes to, in Hz, for the
+tones typed in. Digits and Morse match exactly.
 
 Tones that are heard and named on a system's Tones card are its **signals**: "a signal is heard".
 
