@@ -20,8 +20,9 @@ recorder's computer. A call's recording can follow.
 - **Send a test** and **Send a test recording** on each destination
 - Its own page in the recorder's interface, and a **Notify** button on each signal
 
-Needs a Trunk Recorder Pro with tone signals and plugin pages (the plugin SDK 0.6.0). Until those
-are released, it's built against the branch that brings them.
+Needs a Trunk Recorder Pro with tone signals and plugin pages (plugin SDK 0.7.0): 0.2.0 and later
+need its `tone_pattern` events (0.1.0 was for test builds before them). Until that recorder is
+released, it's built against the branch that brings it.
 
 Staged here; it's to move to [TrunkRecorder](https://github.com/TrunkRecorder) as an official plugin.
 
@@ -41,9 +42,9 @@ and add `target/release/notify` with **Add from a file…**.
 ## Signals
 
 A signal is a tone pattern a system sends, with a name: `FD_PAGE`, `SIREN_SIGNAL_1`. They're
-made in the recorder, on each system's **Tones** card (Radio system tab): **Add** on a pattern
-heard, or **New signal** to type one in from a paging list. A signal's **Notify** button adds a
-rule for it here and opens this page.
+made in the recorder: in Setup, each system's **Signals** (type one in from a paging list), or
+**Add** on a pattern heard on its **Tones** card (Radio system tab). Each signal's **Notify** button
+there adds a rule for it here and opens this page.
 
 ## Configure
 
@@ -81,7 +82,7 @@ A rule for "a tone is heard" can name particular tones: a page from a paging lis
 heard on the air yet, say a Quick Call II pair at 313.0 and 1642.0 Hz. The page asks for what each kind
 needs: a page's tone A and tone B, a long tone's one tone, DTMF or KNOX digits, a Morse ID's text,
 and lengths only where they're played (▶ plays it; pressed again, stops). In the settings each is
-`pattern`, `tonesHz` (A then B for a page), `digits` (`KNOX ` first for KNOX; Morse: the text) and
+`pattern`, `tonesHz` (A then B for a page), `digits` (Morse: the text), `knox` (KNOX digits) and
 `lengthsS` (not matched, since pagers vary them).
 
 A tone heard counts as one typed in as the recorder counts a signal: within ±1.5 % of it when it's
@@ -90,7 +91,7 @@ frame names it (those name tones only to the nearest 31.25 Hz). **Extra toleranc
 (`extraTolerancePct`) widens both by that much. The page says what it comes to, in Hz, for the
 tones typed in. Digits and Morse match exactly.
 
-Tones that are heard and named on a system's Tones card are its **signals**: "a signal is heard".
+Tones a system sends that are named in the recorder are its **signals**: "a signal is heard".
 
 A new talkgroup or radio is one first heard after this plugin has known the system an hour, so
 starting with a new system doesn't announce everything on it. What's been heard is kept in the

@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use serde_json::Value;
-use trunk_recorder_plugin::filter::glob;
+use trunk_recorder_plugin::filter::talkgroup_matches;
 
 use crate::payload::Notification;
 use crate::settings::{tolerance, Encryption, Event, Pattern, Rule, ToneSpec};
@@ -23,11 +23,12 @@ pub struct Notice {
     /// Signals: their ids (without the system).
     pub signals: Vec<String>,
     /// Tones and signals: the pattern (`two_tone`, …), its tones (Hz), its
-    /// digits (`KNOX ` first for KNOX) or Morse text, and whether a tone
+    /// digits (KNOX ones: `knox`) or Morse text, and whether a tone
     /// frame named it (else it was measured in the audio).
     pub pattern: String,
     pub tones: Vec<f64>,
     pub digits: String,
+    pub knox: bool,
     pub frame: bool,
     pub text: String,
     pub call_num: Option<u64>,
@@ -40,11 +41,7 @@ pub struct Notice {
 
 /// A list of numbers, ranges (`1000-1099`) and patterns (`507*`) names `v` (an empty one, anything).
 fn listed(list: &[String], v: Option<u32>) -> bool {
-    let names = |entry: &String, v: u32| match entry.trim().split_once('-').map(|(a, b)| (a.trim().parse::<u32>(), b.trim().parse::<u32>())) {
-        Some((Ok(a), Ok(b))) => (a..=b).contains(&v),
-        _ => glob(entry.trim(), &v.to_string()),
-    };
-    list.is_empty() || v.is_some_and(|v| list.iter().any(|e| names(e, v)))
+    list.is_empty() || v.is_some_and(|v| list.iter().any(|e| talkgroup_matches(e, v)))
 }
 
 /// A rule's signal (`system:ID`, or a bare `ID` for any system's) is one heard on `system`.
@@ -57,13 +54,13 @@ fn signal_is(want: &str, system: &str, heard: &str) -> bool {
 
 /// What was heard is tone `t`: its pattern, and its tones each within tolerance (digits and Morse: the same).
 pub fn tone_is(t: &ToneSpec, n: &Notice) -> bool {
+    // (KNOX digits are the pattern `digits` with `knox`, as the recorder has them; `knox` is the same.)
+    let knox = t.knox || t.pattern == Pattern::Knox;
     if t.pattern.name() != n.pattern && t.pattern.name() != n.kind() {
         return false;
     }
     match t.pattern {
-        Pattern::Digits => t.digits == n.digits,
-        // (KNOX keys are written with `KNOX ` first, as the recorder's signals have them.)
-        Pattern::Knox => n.kind() == "knox" && t.digits.trim_start_matches("KNOX ") == n.digits.trim_start_matches("KNOX "),
+        Pattern::Digits | Pattern::Knox => knox == n.knox && t.digits == n.digits,
         Pattern::Morse => t.digits.eq_ignore_ascii_case(&n.digits),
         _ => {
             let tol = |f: f64| tolerance(f, n.frame) + f * t.extra_tolerance_pct / 100.0;
@@ -75,7 +72,7 @@ pub fn tone_is(t: &ToneSpec, n: &Notice) -> bool {
 impl Notice {
     /// Its kind of tone: its pattern, with digit strings told apart by their keypad (`digits` is DTMF, `knox` KNOX).
     pub fn kind(&self) -> &str {
-        if self.pattern == "digits" && self.digits.starts_with("KNOX ") {
+        if self.pattern == "digits" && self.knox {
             "knox"
         } else {
             &self.pattern
@@ -236,16 +233,24 @@ mod tests {
         assert!(!matches(&r, &page([1642.0, 313.0], false)), "B then A");
         // Digits, exactly; KNOX only when it says.
         let keys = rule(json!({ "name": "siren", "event": "tone", "tones": [{ "pattern": "digits", "digits": "072864" }] }));
-        let digits = |d: &str| Notice { event: Some(Event::Tone), pattern: "digits".into(), digits: d.into(), ..Default::default() };
-        assert!(matches(&keys, &digits("072864")) && !matches(&keys, &digits("KNOX 072864")));
+        let digits = |d: &str| Notice {
+            event: Some(Event::Tone),
+            pattern: "digits".into(),
+            knox: d.starts_with('K'),
+            digits: d.trim_start_matches('K').into(),
+            ..Default::default()
+        };
+        assert!(matches(&keys, &digits("072864")) && !matches(&keys, &digits("K072864")));
+        let knox = rule(json!({ "name": "siren", "event": "tone", "tones": [{ "pattern": "digits", "digits": "072864", "knox": true }] }));
+        assert!(matches(&knox, &digits("K072864")) && !matches(&knox, &digits("072864")));
         // A little further, when it says.
         let wide = rule(json!({ "name": "rare", "event": "tone", "tones": [{ "pattern": "two_tone", "tonesHz": [313.0, 1642.0], "extraTolerancePct": 5 }] }));
         assert!(matches(&wide, &page([330.0, 1642.0], false)), "within 1.5 % + 5 %");
         // DTMF and KNOX are kinds apart.
         let knox_only = rule(json!({ "name": "k", "event": "tone", "patterns": ["knox"] }));
-        assert!(matches(&knox_only, &digits("KNOX 072864")) && !matches(&knox_only, &digits("072864")));
+        assert!(matches(&knox_only, &digits("K072864")) && !matches(&knox_only, &digits("072864")));
         let dtmf_only = rule(json!({ "name": "d", "event": "tone", "patterns": ["digits"] }));
-        assert!(matches(&dtmf_only, &digits("072864")) && !matches(&dtmf_only, &digits("KNOX 072864")));
+        assert!(matches(&dtmf_only, &digits("072864")) && !matches(&dtmf_only, &digits("K072864")));
         // None typed in: any tone.
         assert!(matches(&rule(json!({ "name": "any", "event": "tone" })), &page([1.0, 2.0], false)));
     }

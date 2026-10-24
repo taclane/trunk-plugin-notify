@@ -1,6 +1,6 @@
 [package]
 name = "notify"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Notifications: rules over what the recorder hears (signals, tones, emergencies, new talkgroups and radios), sent to webhooks (Discord, Slack, ntfy, JSON) and commands."
 license = "GPL-3.0-or-later"

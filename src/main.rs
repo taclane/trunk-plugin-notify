@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 use trunk_recorder_plugin::{
-    topic, Action, CallInfo, ConcludedCall, Contribution, Host, Manifest, NoConfig, Outcome, Page, Plugin, Reply, Setup, ToneEvent, UnitEvent,
+    topic, Action, CallInfo, ConcludedCall, Contribution, Host, Manifest, NoConfig, Outcome, Page, Plugin, Reply, Setup, TonePatternEvent, UnitEvent,
 };
 
 use payload::Notification;
@@ -60,7 +60,7 @@ impl Plugin for Notify {
     fn manifest() -> Manifest {
         Manifest {
             name: "Notifications".into(),
-            subscribe: vec![topic::TONE.into(), topic::CALL_START.into(), topic::UNIT.into(), topic::CALL_CONCLUDED.into()],
+            subscribe: vec![topic::TONE_PATTERN.into(), topic::CALL_START.into(), topic::UNIT.into(), topic::CALL_CONCLUDED.into()],
             page: Some(Page { title: "Notifications".into() }),
             live_settings: true,
             contribute: vec![Contribution {
@@ -82,29 +82,31 @@ impl Plugin for Notify {
         Ok(Notify { host, settings, notifier: Notifier::default(), sender, seen, saved: Instant::now(), follow_ups: Vec::new(), data_dir: setup.data_dir })
     }
 
-    fn tone(&mut self, t: ToneEvent) {
-        let on = on_tg(t.talkgroup, &t.alpha_tag);
+    fn tone_pattern(&mut self, e: TonePatternEvent) {
+        let p = &e.pattern;
+        let on = on_tg(e.talkgroup, &e.alpha_tag);
         let n = Notice {
             event: Some(Event::Tone),
-            system: t.short_name.clone(),
-            site: t.site.clone(),
-            talkgroup: Some(t.talkgroup),
-            alpha_tag: t.alpha_tag.clone(),
-            unit: (t.src != 0).then_some(t.src),
-            unit_tag: t.src_tag.clone(),
-            pattern: t.pattern.clone(),
-            tones: t.tones.clone(),
-            digits: if t.knox { format!("KNOX {}", t.digits) } else { t.digits.clone() },
-            frame: t.origin == "frame",
-            text: format!("{} {on}", t.text),
-            call_num: Some(t.call_num),
-            time: t.time,
-            detail: serde_json::to_value(&t).unwrap_or_default(),
+            system: e.short_name.clone(),
+            site: e.site.clone(),
+            talkgroup: Some(e.talkgroup),
+            alpha_tag: e.alpha_tag.clone(),
+            unit: (p.src > 0).then_some(p.src as u32),
+            unit_tag: e.src_tag.clone(),
+            pattern: p.pattern.clone(),
+            tones: p.tones.clone(),
+            digits: p.digits.clone(),
+            knox: p.knox,
+            frame: p.origin == "frame",
+            text: format!("{} {on}", p.text),
+            call_num: Some(e.call_num),
+            time: e.time,
+            detail: serde_json::to_value(&e).unwrap_or_default(),
             ..Default::default()
         };
-        if !t.signals.is_empty() {
-            let named = t.signals.iter().map(|s| format!("{}:{s}", t.short_name)).collect::<Vec<_>>().join(", ");
-            self.fire(Notice { event: Some(Event::Signal), signals: t.signals.clone(), text: format!("{named} {on}"), ..n.clone() });
+        if !p.signals.is_empty() {
+            let named = p.signals.iter().map(|s| format!("{}:{s}", e.short_name)).collect::<Vec<_>>().join(", ");
+            self.fire(Notice { event: Some(Event::Signal), signals: p.signals.clone(), text: format!("{named} {on}"), ..n.clone() });
         }
         self.fire(n);
     }
@@ -321,18 +323,21 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use trunk_recorder_plugin::{testing, HostMessage};
+    use trunk_recorder_plugin::{testing, HostMessage, TonePattern};
 
-    fn tone(signals: &[&str]) -> ToneEvent {
-        ToneEvent {
+    fn tone(signals: &[&str]) -> TonePatternEvent {
+        TonePatternEvent {
             short_name: "wood".into(),
             talkgroup: 1,
             alpha_tag: "Fire Dispatch".into(),
-            pattern: "two_tone".into(),
-            tones: vec![467.1, 1032.3],
-            text: "two-tone 467.1 → 1032.3 Hz".into(),
-            signals: signals.iter().map(|s| s.to_string()).collect(),
             time: now(),
+            pattern: TonePattern {
+                pattern: "two_tone".into(),
+                tones: vec![467.1, 1032.3],
+                text: "two-tone 467.1 → 1032.3 Hz".into(),
+                signals: signals.iter().map(|s| s.to_string()).collect(),
+                ..Default::default()
+            },
             ..Default::default()
         }
     }
@@ -351,7 +356,7 @@ mod tests {
             "destinations": [{ "name": "log", "type": "command", "command": format!("cat > {}", out.display()) }]
         });
         let hello = testing::hello(&dir, config);
-        let run = testing::run::<Notify>([HostMessage::Hello(hello), HostMessage::Tone(tone(&["FD_PAGE"])), HostMessage::Tone(tone(&[]))]);
+        let run = testing::run::<Notify>([HostMessage::Hello(hello), HostMessage::TonePattern(tone(&["FD_PAGE"])), HostMessage::TonePattern(tone(&[]))]);
         assert!(run.ready());
         // (The sending thread may still be at it.)
         for _ in 0..50 {

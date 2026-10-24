@@ -11,8 +11,8 @@ pub struct Settings {
     /// Rules
     ///
     /// What to watch for, and where to send word. Every condition a rule sets has to hold; one left
-    /// empty is any. For "this or that", make two rules. A signal's Notify button (on its system's
-    /// Tones card) adds a rule for it.
+    /// empty is any. For "this or that", make two rules. A signal's Notify button (Setup, each system's
+    /// Signals) adds a rule for it.
     pub rules: Vec<Rule>,
     /// Destinations
     ///
@@ -50,7 +50,7 @@ pub struct Rule {
     pub systems: Vec<String>,
     /// Signals
     ///
-    /// Which (empty: any signal of the systems'). Signals are named on each system's Tones card.
+    /// Which (empty: any signal of the systems'). Signals are named in Setup (each system's Signals).
     #[schemars(extend("x-signals" = true))]
     #[schemars(extend("x-when" = { "event": "signal" }))]
     pub signals: Vec<String>,
@@ -163,8 +163,10 @@ pub struct ToneSpec {
     pub pattern: Pattern,
     /// Hz, in order (two-tone: A then B).
     pub tones_hz: Vec<f64>,
-    /// Digits (`KNOX ` first for KNOX tones); Morse: the text.
+    /// Digits; Morse: the text.
     pub digits: String,
+    /// The digits are KNOX tones (else DTMF).
+    pub knox: bool,
     pub lengths_s: Vec<f64>,
     /// How much further than usual ([`tolerance`]) a heard tone may be, % of it.
     pub extra_tolerance_pct: f64,
@@ -172,7 +174,7 @@ pub struct ToneSpec {
 
 impl Default for ToneSpec {
     fn default() -> Self {
-        ToneSpec { pattern: Pattern::TwoTone, tones_hz: Vec::new(), digits: String::new(), lengths_s: Vec::new(), extra_tolerance_pct: 0.0 }
+        ToneSpec { pattern: Pattern::TwoTone, tones_hz: Vec::new(), digits: String::new(), knox: false, lengths_s: Vec::new(), extra_tolerance_pct: 0.0 }
     }
 }
 

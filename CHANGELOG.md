@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0]
+
+- For Trunk Recorder Pro with its in-band signalling restructure: tones arrive as `tone_pattern`
+  events (`tone` before), KNOX digits as a `knox` flag (no `KNOX ` prefix), and talkgroup and radio
+  lists use the recorder's own matcher. A tone typed into a rule is `{ "pattern": "digits",
+  "digits": "072864", "knox": true }` for KNOX.
+- The Notify button is on each signal in Setup, where signals are now edited.
+
 ## [0.1.0]
 
 The first release: notifications as a plugin for Trunk Recorder Pro.

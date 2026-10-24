@@ -16,7 +16,7 @@ recording, following a notification about it) or `test`.
   "talkgroup": 1,
   "alpha_tag": "Fire Dispatch",
   "unit": 1675303,
-  "unit_tag": "",
+  "unit_tag": "Engine 4",
   "signals": ["wood:FD_PAGE"],
   "text": "wood:FD_PAGE on TG 1 Fire Dispatch",
   "call_num": 18233,
@@ -26,15 +26,18 @@ recording, following a notification about it) or `test`.
     "call_num": 18233,
     "talkgroup": 1,
     "alpha_tag": "Fire Dispatch",
-    "src": 1675303,
+    "src_tag": "Engine 4",
+    "time": 1792687369.42,
     "pattern": "two_tone",
     "tones": [467.13, 1032.3],
     "lengths": [1.0, 3.02],
     "format": "Quick Call II",
+    "pos": 2.14,
+    "len": 4.02,
+    "src": 1675303,
     "origin": "audio",
     "text": "two-tone 467.13 → 1032.3 Hz, 1 + 3.02 s (Quick Call II)",
-    "signals": ["FD_PAGE"],
-    "time": 1792687369.42
+    "signals": ["FD_PAGE"]
   }
 }
 ```
