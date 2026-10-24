@@ -138,3 +138,5 @@ jobs:
         with:
           body_path: notes.md
           files: dist/*
+          # A version with a pre-release part (0.2.0-rc.1) is a pre-release: never the latest.
+          prerelease: ${{ contains(needs.meta.outputs.version, '-') }}

@@ -2,6 +2,20 @@
 
 ## [0.1.0]
 
-- Rules over signals, tone patterns, emergencies, calls, new talkgroups and new radios; Discord,
-  Slack, ntfy and JSON webhooks, and commands; a call's recording to follow; test buttons; its own
-  page in the recorder, and a Notify button on each signal
+The first release: notifications as a plugin for Trunk Recorder Pro.
+
+- Rules over a system's signals (named pages, sirens, DTMF and KNOX strings, Morse IDs), any tone
+  heard (by kind, or particular tones typed in, with ▶), emergencies (a call or a radio's alarm),
+  calls beginning, and new talkgroups and radios; narrowed by system, talkgroup, radio and
+  encryption, with a cooldown, your own title and message
+- Discord embeds, Slack blocks, ntfy, the notification's JSON or a body of your own; commands with
+  the notification on stdin and `TRP_*` variables
+- Then the recording: once the call is saved, its audio as a file to Discord and ntfy, inline in
+  JSON, as `TRP_AUDIO` to commands, and a link where one can't go
+- Send a test and Send a test recording on each destination
+- Its own page in the recorder (under Plugins), a Notify button on each signal, and settings that
+  take effect as they're edited
+- Radios and talkgroups by name, as the recorder knows them
+
+Needs a Trunk Recorder Pro with tone signals and plugin pages (SDK 0.6.0); built against the branch
+that brings them until that SDK is published.
