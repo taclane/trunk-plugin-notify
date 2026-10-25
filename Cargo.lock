@@ -123,7 +123,7 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "notify"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "schemars",
  "serde",
@@ -338,7 +338,7 @@ dependencies = [
 [[package]]
 name = "trunk-recorder-plugin"
 version = "0.7.0"
-source = "git+https://github.com/TrunkRecorder/trunk-recorder-pro?branch=main#7e1edffe22ef501f0ad1f42441816d2f122d785e"
+source = "git+https://github.com/TrunkRecorder/trunk-recorder-pro?tag=v0.2.10#bd811fd3ce84add4572abfb03fb9b2d8becc8262"
 dependencies = [
  "schemars",
  "serde",

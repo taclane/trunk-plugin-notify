@@ -21,16 +21,14 @@ recorder's computer. A call's recording can follow.
 - **Send a test** and **Send a test recording** on each destination
 - Its own page in the recorder's interface, and a **Notify** button on each signal
 
-Needs a Trunk Recorder Pro with tone patterns and plugin pages (plugin SDK 0.7.0), the release after
-0.2.9: 0.2.0 and later need its `tone_pattern` events (0.1.0 was for test builds before them). Until
-SDK 0.7.0 is on crates.io, it's built from Trunk Recorder Pro's main.
-
-Staged here; it's to move to [TrunkRecorder](https://github.com/TrunkRecorder) as an official plugin.
+Needs Trunk Recorder Pro 0.2.10 or later (plugin SDK 0.7.0). On an earlier recorder it runs, but
+hears no tones, and has no page of its own. Until SDK 0.7.0 is on crates.io, it's built from
+Trunk Recorder Pro's v0.2.10.
 
 ## Install
 
 In Trunk Recorder Pro, open **Plugins**, choose **Install from GitHub…**, and enter
-`taclane/trunk-plugin-notify`. Turn it on: **Notifications** appears in the navigation.
+`TrunkRecorder/trunk-plugin-notify`. Turn it on: **Notifications** appears in the navigation.
 
 To build it yourself:
 

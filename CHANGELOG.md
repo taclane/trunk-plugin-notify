@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.1]
+
+- Moved to [TrunkRecorder](https://github.com/TrunkRecorder/trunk-plugin-notify), for the plugin
+  store. Built from Trunk Recorder Pro v0.2.10 (SDK 0.7.0), the first release it fully works with.
+
 ## [0.2.0]
 
 - For Trunk Recorder Pro with its in-band signalling restructure: tones arrive as `tone_pattern`
