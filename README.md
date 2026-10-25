@@ -15,14 +15,15 @@ recorder's computer. A call's recording can follow.
 - Discord embeds, Slack blocks, ntfy (title, priority, click-through), the notification's JSON,
   or a body template of your own; headers for tokens
 - Commands, given the notification on stdin and as `TRP_*` variables
-- **Then the recording**: once the call is saved, a second notification with its audio: a file for
-  Discord and ntfy, inline for JSON webhooks, a file's path for commands, a link where a file can't go
+- **Sent when it's heard, when the call ends, or both**, and **with the recording** when the call
+  ends: a file for Discord and ntfy, inline for JSON webhooks, a file's path for commands, a link
+  where a file can't go
 - **Send a test** and **Send a test recording** on each destination
 - Its own page in the recorder's interface, and a **Notify** button on each signal
 
-Needs a Trunk Recorder Pro with tone signals and plugin pages (plugin SDK 0.7.0): 0.2.0 and later
-need its `tone_pattern` events (0.1.0 was for test builds before them). Until that recorder is
-released, it's built against the branch that brings it.
+Needs a Trunk Recorder Pro with tone patterns and plugin pages (plugin SDK 0.7.0), the release after
+0.2.9: 0.2.0 and later need its `tone_pattern` events (0.1.0 was for test builds before them). Until
+SDK 0.7.0 is on crates.io, it's built from Trunk Recorder Pro's main.
 
 Staged here; it's to move to [TrunkRecorder](https://github.com/TrunkRecorder) as an official plugin.
 
@@ -73,7 +74,8 @@ Every condition a rule sets has to hold; one left empty is any. For "this or tha
 | Not again within, s | `cooldownS` | `60` | Once for the same system, talkgroup and signal (or pattern) in this long |
 | Title | `title` | | The headline. Placeholders: `{system}` `{site}` `{talkgroup}` `{alpha_tag}` `{unit}` `{unit_tag}` `{signals}` `{text}` `{rule}` `{event}` |
 | Message | `message` | | The words; empty: what happened. The same placeholders |
-| Then the recording | `followUp` | `false` | Once the call is saved, a second notification (`recording`) with its audio ([below](#recordings)) |
+| Send | `send` | `heard` | `heard` (at once), `call_end` (when the call it was on ends) or `both`. A radio's alarm, on no call, is sent at once ([below](#when-the-call-ends)) |
+| With the recording | `recording` | `false` | The message when the call ends carries its audio ([below](#recordings)) |
 | Send to | `to` | | Destinations, by name |
 
 ### Tones typed in
@@ -110,10 +112,17 @@ plugin's data folder.
 | Own body | `body` | Webhooks: a template in place of the format: `{title}` `{text}` `{rule}` `{event}` `{system}` `{talkgroup}` `{alpha_tag}` `{unit}` `{signals}` `{url}` `{json}`. One that begins `{` is sent as JSON, its values escaped |
 | Command | `command` | Run by the shell, with the notification's JSON on stdin and `TRP_TITLE`, `TRP_TEXT`, `TRP_RULE`, `TRP_EVENT`, `TRP_SYSTEM`, `TRP_TALKGROUP`, `TRP_UNIT`, `TRP_SIGNALS`, `TRP_URL` and, for a recording, `TRP_AUDIO`. It has 30 seconds |
 
+### When the call ends
+
+A rule sent **when the call ends** (or **both**) waits for the call the event was on to be over: a
+page's notification goes once the dispatcher stops talking, with how long the call ran. A call that
+isn't recorded is over when it ends; a recorded one when it's saved (or a minute after it ends, if it
+never is, as one too short to keep). However many times a rule fires during one call (a page and its
+warble), it sends one message when the call ends.
+
 ### Recordings
 
-A rule with **Then the recording** sends a second notification once the call is saved, with its
-audio (M4A when another plugin has the recorder make one, else WAV; up to 8 MB):
+A rule **with the recording** sends its call-end message with the call's audio (M4A when another plugin has the recorder make one, else WAV; up to 8 MB):
 
 | Destination | The audio |
 | ----------- | --------- |

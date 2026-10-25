@@ -33,7 +33,7 @@ pub struct Settings {
 #[serde(rename_all = "camelCase", default)]
 #[schemars(extend(
     "x-title" = "name",
-    "x-summary" = ["{event}", "{signals|any signal}", "{tones}", "{patterns}", "{systems|any system}", "TG {talkgroups}", "radio {units}", "{followUp}", "→ {to|nowhere yet}"]
+    "x-summary" = ["{event}", "{signals|any signal}", "{tones}", "{patterns}", "{systems|any system}", "TG {talkgroups}", "radio {units}", "{send}", "{recording}", "→ {to|nowhere yet}"]
 ))]
 pub struct Rule {
     /// Name
@@ -93,10 +93,16 @@ pub struct Rule {
     /// The words. Empty: what happened ({text}). The same placeholders as the title.
     #[schemars(extend("x-multiline" = true))]
     pub message: String,
-    /// Then the recording
+    /// Send
     ///
-    /// Once the call is saved, a second notification with its audio (see "Link recordings from").
-    pub follow_up: bool,
+    /// When it's heard, at once; when the call it was on ends; or both. (A radio's alarm, on no call,
+    /// is sent when it's heard.)
+    pub send: When,
+    /// With the recording
+    ///
+    /// The message when the call ends carries its audio (see "Link recordings from").
+    #[schemars(extend("x-when" = { "send": ["call_end", "both"] }))]
+    pub recording: bool,
     /// Send to
     #[schemars(extend("x-ref" = "destinations"))]
     pub to: Vec<String>,
@@ -118,7 +124,8 @@ impl Default for Rule {
             cooldown_s: 60,
             title: String::new(),
             message: String::new(),
-            follow_up: false,
+            send: When::Heard,
+            recording: false,
             to: Vec::new(),
         }
     }
@@ -227,6 +234,19 @@ impl Pattern {
             Pattern::Beep => "beep",
         }
     }
+}
+
+/// When a rule's notification goes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum When {
+    /// When it's heard
+    #[default]
+    Heard,
+    /// When the call ends
+    CallEnd,
+    /// Both
+    Both,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

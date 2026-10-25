@@ -21,10 +21,12 @@ use trunk_recorder_plugin::{
 use payload::Notification;
 use rules::{Notice, Notifier};
 use seen::Seen;
-use settings::{Destination, Event, Settings};
+use settings::{Destination, Event, Settings, When};
 
-/// A follow-up waits this long for its call to be saved.
+/// A follow-up waits this long for its call to end.
 const FOLLOW_UP_WAIT: Duration = Duration::from_secs(3600);
+/// Once its call has ended, this long for it to be saved (a call too short to keep never is).
+const SAVE_WAIT: Duration = Duration::from_secs(60);
 /// Audio past this size isn't attached (Discord takes 10 MB without boosts).
 const MAX_ATTACH: usize = 8 << 20;
 /// What's been heard is saved this often (and at shutdown).
@@ -34,12 +36,24 @@ pub fn now() -> f64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
 }
 
-/// A notification whose call's recording is to follow it, to its rule's destinations as they were
-/// when it fired (the rules may change before the call is saved).
+/// A notification to send when its call ends (with its recording, `recording`), to its rule's
+/// destinations as they were when it fired (the rules may change before the call ends).
 struct FollowUp {
     n: Notification,
     to: Vec<String>,
+    recording: bool,
     since: Instant,
+    /// When its call ended (it's then waiting for the call to be saved).
+    ended: Option<Instant>,
+}
+
+/// A saved call, as follow-ups tell of it.
+struct Saved {
+    path: String,
+    call_num: u64,
+    secs: f64,
+    url: String,
+    audio: Option<deliver::Audio>,
 }
 
 struct Notify {
@@ -60,7 +74,7 @@ impl Plugin for Notify {
     fn manifest() -> Manifest {
         Manifest {
             name: "Notifications".into(),
-            subscribe: vec![topic::TONE_PATTERN.into(), topic::CALL_START.into(), topic::UNIT.into(), topic::CALL_CONCLUDED.into()],
+            subscribe: vec![topic::TONE_PATTERN.into(), topic::CALL_START.into(), topic::CALL_END.into(), topic::UNIT.into(), topic::CALL_CONCLUDED.into()],
             page: Some(Page { title: "Notifications".into() }),
             live_settings: true,
             contribute: vec![Contribution {
@@ -83,6 +97,7 @@ impl Plugin for Notify {
     }
 
     fn tone_pattern(&mut self, e: TonePatternEvent) {
+        self.overdue();
         let p = &e.pattern;
         let on = on_tg(e.talkgroup, &e.alpha_tag);
         let n = Notice {
@@ -112,6 +127,7 @@ impl Plugin for Notify {
     }
 
     fn call_start(&mut self, c: CallInfo) {
+        self.overdue();
         let unit = c.sources.last().map(|s| s.unit).or(c.units.last().copied()).filter(|&u| u != 0);
         let tag_of = |u: u32| c.sources.iter().find(|s| s.unit == u).map_or(String::new(), |s| s.tag.clone());
         let unit_tag = unit.map_or(String::new(), tag_of);
@@ -159,6 +175,7 @@ impl Plugin for Notify {
     }
 
     fn unit(&mut self, u: UnitEvent) {
+        self.overdue();
         if u.kind != "emergency_alarm" || u.unit == 0 {
             return;
         }
@@ -178,9 +195,30 @@ impl Plugin for Notify {
         });
     }
 
+    fn call_end(&mut self, c: CallInfo) {
+        self.overdue();
+        let now = now();
+        // The follow-ups about this call: its system and talkgroup, a moment it was on.
+        let ours = |f: &FollowUp| {
+            f.ended.is_none() && f.n.short_name == c.short_name && f.n.talkgroup == Some(c.talkgroup) && f.n.time >= c.start_time - 2.0 && f.n.time <= now + 2.0
+        };
+        if c.recording {
+            // Saved, they go with it (call_concluded); not, after a while (overdue).
+            for f in self.follow_ups.iter_mut().filter(|f| ours(f)) {
+                f.ended = Some(Instant::now());
+            }
+        } else {
+            // Not recorded: there'll be no recording to wait for.
+            let (due, keep) = std::mem::take(&mut self.follow_ups).into_iter().partition(ours);
+            self.follow_ups = keep;
+            self.after_call(due, None);
+        }
+    }
+
     fn call_concluded(&mut self, c: ConcludedCall) {
+        self.overdue();
         let r = &c.call;
-        // Notifications about this call: its system and talkgroup, a moment it was on.
+        // The follow-ups about this call: its system and talkgroup, a moment it was on.
         let ours = |f: &FollowUp| {
             f.n.short_name == r.short_name
                 && f.n.talkgroup == Some(r.talkgroup)
@@ -188,38 +226,24 @@ impl Plugin for Notify {
                 && f.n.time <= r.stop_time as f64 + 2.0
         };
         let (due, keep): (Vec<FollowUp>, Vec<FollowUp>) = std::mem::take(&mut self.follow_ups).into_iter().partition(ours);
-        self.follow_ups = keep.into_iter().filter(|f| f.since.elapsed() < FOLLOW_UP_WAIT).collect();
+        self.follow_ups = keep;
         if due.is_empty() {
             self.host.call_result(&c.path, Outcome::Skipped, "", "");
             return;
         }
+        let recording = due.iter().any(|f| f.recording);
         // Decrypted voice goes no further than the recorder was let send it: no audio, no link.
         let (bytes, ext) = match c.files.m4a.as_ref().and_then(|p| std::fs::read(p).ok()) {
             Some(b) => (b, "m4a"),
             None => (std::fs::read(&c.files.wav).unwrap_or_default(), "wav"),
         };
         let name = format!("{}.{ext}", c.path.rsplit('/').next().unwrap_or("call"));
-        let audio = (!r.decrypted && !bytes.is_empty() && bytes.len() <= MAX_ATTACH).then(|| Arc::new((bytes, name)));
+        let audio = (recording && !r.decrypted && !bytes.is_empty() && bytes.len() <= MAX_ATTACH).then(|| Arc::new((bytes, name)));
         let base = self.settings.recorder_address.trim().trim_end_matches('/');
         let url = if base.is_empty() || r.decrypted { String::new() } else { format!("{base}/calls/{}.{ext}", c.path) };
-        let secs = r.call_length_ms as f64 / 1000.0;
-        // Once to each rule's destinations, however many of its notifications asked (a page and its warble).
-        let mut sent: Vec<String> = Vec::new();
-        for f in due {
-            if sent.contains(&f.n.rule) {
-                continue;
-            }
-            sent.push(f.n.rule.clone());
-            let mut n = f.n;
-            n.id = self.notifier.next_id();
-            n.event = "recording".into();
-            n.text = format!("{} (recording, {secs:.0} s)", n.text);
-            n.url = url.clone();
-            n.call_num = Some(r.call_num);
-            n.detail = json!({ "path": c.path, "length": secs });
-            self.tell(n, &f.to, audio.clone());
-        }
-        self.host.call_result(&c.path, Outcome::Ok, "recording sent", "");
+        let saved = Saved { path: c.path.clone(), call_num: r.call_num, secs: r.call_length_ms as f64 / 1000.0, url, audio };
+        self.after_call(due, Some(saved));
+        self.host.call_result(&c.path, Outcome::Ok, if recording { "recording sent" } else { "sent" }, "");
     }
 
     fn action(&mut self, a: Action, reply: Reply) {
@@ -260,11 +284,66 @@ impl Notify {
         }
         for (i, note) in self.notifier.notice(&self.settings.rules, &n) {
             let rule = &self.settings.rules[i];
-            if rule.follow_up {
-                self.follow_ups.push(FollowUp { n: note.clone(), to: rule.to.clone(), since: Instant::now() });
+            // (On no call, as a radio's alarm: there's no end to wait for.)
+            let on_call = note.call_num.is_some();
+            let (now, at_end) = match rule.send {
+                When::Heard => (true, false),
+                When::CallEnd => (!on_call, on_call),
+                When::Both => (true, on_call),
+            };
+            if at_end {
+                self.follow_ups.push(FollowUp { n: note.clone(), to: rule.to.clone(), recording: rule.recording, since: Instant::now(), ended: None });
             }
-            let to = rule.to.clone();
-            self.tell(note, &to, None);
+            if now {
+                let to = rule.to.clone();
+                self.tell(note, &to, None);
+            }
+        }
+    }
+
+    /// Follow-ups whose call ended a while ago and wasn't saved (or whose end was never heard): sent
+    /// as they are.
+    fn overdue(&mut self) {
+        let late = |f: &FollowUp| f.ended.is_some_and(|t| t.elapsed() > SAVE_WAIT) || f.since.elapsed() > FOLLOW_UP_WAIT;
+        if self.follow_ups.iter().any(late) {
+            let (due, keep) = std::mem::take(&mut self.follow_ups).into_iter().partition(late);
+            self.follow_ups = keep;
+            self.after_call(due, None);
+        }
+    }
+
+    /// Follow-ups whose call is over: each rule's once, however many of its notifications asked (a
+    /// page and its warble), with the call as saved (its recording, when asked), or not.
+    fn after_call(&mut self, due: Vec<FollowUp>, saved: Option<Saved>) {
+        let mut sent: Vec<String> = Vec::new();
+        for f in due {
+            if sent.contains(&f.n.rule) {
+                continue;
+            }
+            sent.push(f.n.rule.clone());
+            let mut n = f.n;
+            n.id = self.notifier.next_id();
+            let audio = match &saved {
+                Some(s) if f.recording => {
+                    n.event = "recording".into();
+                    n.text = format!("{} (recording, {:.0} s)", n.text, s.secs);
+                    n.url = s.url.clone();
+                    s.audio.clone()
+                }
+                Some(s) => {
+                    n.text = format!("{} (call over, {:.0} s)", n.text, s.secs);
+                    None
+                }
+                None => {
+                    n.text = format!("{} (call over)", n.text);
+                    None
+                }
+            };
+            if let Some(s) = &saved {
+                n.call_num = Some(s.call_num);
+                n.detail = json!({ "path": s.path, "length": s.secs, "heard": n.detail });
+            }
+            self.tell(n, &f.to, audio);
         }
     }
 
@@ -382,5 +461,45 @@ mod tests {
         let schema = m.config.unwrap();
         assert_eq!(schema["properties"]["destinations"]["items"]["x-actions"][0]["id"], "test");
         assert_eq!(schema["properties"]["rules"]["items"]["properties"]["to"]["x-ref"], "destinations");
+    }
+
+    /// When the call ends: nothing as it's heard, then its words once the call is over (not
+    /// recorded here, so at once); both: each.
+    #[cfg(unix)]
+    #[test]
+    fn sent_when_the_call_ends() {
+        let dir = testing::temp_dir("notify-end");
+        let out = dir.join("got.txt");
+        let config = json!({
+            "rules": [
+                { "name": "At the end", "event": "signal", "send": "call_end", "to": ["log"] },
+                { "name": "Twice", "event": "signal", "send": "both", "to": ["log"] }
+            ],
+            "destinations": [{ "name": "log", "type": "command", "command": format!("(echo \"$TRP_RULE|$TRP_TEXT\") >> {}", out.display()) }]
+        });
+        let hello = testing::hello(&dir, config);
+        let page = tone(&["FD_PAGE"]);
+        let end = CallInfo { short_name: "wood".into(), talkgroup: 1, start_time: page.time - 5.0, recording: false, ..Default::default() };
+        let run = testing::run::<Notify>([HostMessage::Hello(hello), HostMessage::TonePattern(page), HostMessage::CallEnd(end)]);
+        assert!(run.ready());
+        let lines = |n: usize| {
+            for _ in 0..50 {
+                if std::fs::read_to_string(&out).is_ok_and(|t| t.lines().count() >= n) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            let mut l: Vec<String> = std::fs::read_to_string(&out).unwrap_or_default().lines().map(String::from).collect();
+            l.sort();
+            l
+        };
+        assert_eq!(
+            lines(3),
+            [
+                "At the end|wood:FD_PAGE on TG 1 Fire Dispatch (call over)",
+                "Twice|wood:FD_PAGE on TG 1 Fire Dispatch",
+                "Twice|wood:FD_PAGE on TG 1 Fire Dispatch (call over)",
+            ]
+        );
     }
 }

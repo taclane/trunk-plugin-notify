@@ -42,7 +42,8 @@ recording, following a notification about it) or `test`.
 }
 ```
 
-Its recording, when the rule has **Then the recording**:
+Its recording, when the rule is sent when the call ends (or both) **with the recording** (without
+the recording, the same with the text ending "(call over, 21 s)" and no `url` or `audio`):
 
 ```json
 {

@@ -9,9 +9,9 @@ authors = ["Taclane"]
 publish = false
 
 [dependencies]
-# SDK 0.6.0 (plugin pages, buttons, live settings) isn't on crates.io yet: built from the branch
-# that brings it. Becomes trunk-recorder-plugin = "0.6.0" once it's published.
-trunk-recorder-plugin = { git = "https://github.com/taclane/trunk-recorder-pro", branch = "feature/plugin-ui" }
+# SDK 0.7.0 (plugin pages, buttons, live settings, tone patterns) is in Trunk Recorder Pro's main
+# but not on crates.io yet: built from there. Becomes trunk-recorder-plugin = "0.7.0" once published.
+trunk-recorder-plugin = { git = "https://github.com/TrunkRecorder/trunk-recorder-pro", branch = "main" }
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }

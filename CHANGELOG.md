@@ -7,6 +7,10 @@
   lists use the recorder's own matcher. A tone typed into a rule is `{ "pattern": "digits",
   "digits": "072864", "knox": true }` for KNOX.
 - The Notify button is on each signal in Setup, where signals are now edited.
+- A rule is sent when it's heard, when the call it was on ends, or both (`send`), and with the
+  call's recording when the call ends (`recording`). "Then the recording" (`followUp`) is now `send:
+  both` with `recording`: set it again on rules that had it.
+- Built from Trunk Recorder Pro's main (SDK 0.7.0) until that SDK is on crates.io.
 
 ## [0.1.0]
 
